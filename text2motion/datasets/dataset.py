@@ -6,7 +6,7 @@ from os.path import join as pjoin
 import random
 import codecs as cs
 from tqdm import tqdm
-
+from data_loaders.humanml.scripts.motion_process import recover_from_ric
 
 class Text2MotionDataset(data.Dataset):
     """Dataset for Text2Motion generation task.
@@ -60,6 +60,13 @@ class Text2MotionDataset(data.Dataset):
                             new_name = random.choice('ABCDEFGHIJKLMNOPQRSTUVW') + '_' + name
                             while new_name in data_dict:
                                 new_name = random.choice('ABCDEFGHIJKLMNOPQRSTUVW') + '_' + name
+                            
+                            """"""  
+                            m = torch.tensor(n_motion[np.newaxis, np.newaxis, :, :]) #[batch, nfeats, frames, njoints]
+                            m = recover_from_ric(m, 22)
+                            n_motion = m.view(m.shape[2], -1)
+                            """"""
+                            
                             data_dict[new_name] = {'motion': n_motion,
                                                     'length': len(n_motion),
                                                     'text':[text_dict]}
@@ -67,6 +74,9 @@ class Text2MotionDataset(data.Dataset):
                             length_list.append(len(n_motion))
 
                 if flag:
+                    m = torch.tensor(motion[np.newaxis, np.newaxis, :, :]) #[batch, nfeats, frames, njoints]
+                    m = recover_from_ric(m, 22)
+                    motion = m.view(m.shape[2], -1)
                     data_dict[name] = {'motion': motion,
                                        'length': len(motion),
                                        'text':text_data}
@@ -79,30 +89,53 @@ class Text2MotionDataset(data.Dataset):
 
         name_list, length_list = zip(*sorted(zip(new_name_list, length_list), key=lambda x: x[1]))
 
-        if opt.is_train:
-            # root_rot_velocity (B, seq_len, 1)
-            std[0:1] = std[0:1] / opt.feat_bias
-            # root_linear_velocity (B, seq_len, 2)
-            std[1:3] = std[1:3] / opt.feat_bias
-            # root_y (B, seq_len, 1)
-            std[3:4] = std[3:4] / opt.feat_bias
-            # ric_data (B, seq_len, (joint_num - 1)*3)
-            std[4: 4 + (joints_num - 1) * 3] = std[4: 4 + (joints_num - 1) * 3] / 1.0
-            # rot_data (B, seq_len, (joint_num - 1)*6)
-            std[4 + (joints_num - 1) * 3: 4 + (joints_num - 1) * 9] = std[4 + (joints_num - 1) * 3: 4 + (
-                        joints_num - 1) * 9] / 1.0
-            # local_velocity (B, seq_len, joint_num*3)
-            std[4 + (joints_num - 1) * 9: 4 + (joints_num - 1) * 9 + joints_num * 3] = std[
-                                                                                       4 + (joints_num - 1) * 9: 4 + (
-                                                                                                   joints_num - 1) * 9 + joints_num * 3] / 1.0
-            # foot contact (B, seq_len, 4)
-            std[4 + (joints_num - 1) * 9 + joints_num * 3:] = std[
-                                                              4 + (joints_num - 1) * 9 + joints_num * 3:] / opt.feat_bias
+        # if opt.is_train:
+        #     # root_rot_velocity (B, seq_len, 1)
+        #     std[0:1] = std[0:1] / opt.feat_bias
+        #     # root_linear_velocity (B, seq_len, 2)
+        #     std[1:3] = std[1:3] / opt.feat_bias
+        #     # root_y (B, seq_len, 1)
+        #     std[3:4] = std[3:4] / opt.feat_bias
+        #     # ric_data (B, seq_len, (joint_num - 1)*3)
+        #     std[4: 4 + (joints_num - 1) * 3] = std[4: 4 + (joints_num - 1) * 3] / 1.0
+        #     # rot_data (B, seq_len, (joint_num - 1)*6)
+        #     std[4 + (joints_num - 1) * 3: 4 + (joints_num - 1) * 9] = std[4 + (joints_num - 1) * 3: 4 + (
+        #                 joints_num - 1) * 9] / 1.0
+        #     # local_velocity (B, seq_len, joint_num*3)
+        #     std[4 + (joints_num - 1) * 9: 4 + (joints_num - 1) * 9 + joints_num * 3] = std[
+        #                                                                                4 + (joints_num - 1) * 9: 4 + (
+        #                                                                                            joints_num - 1) * 9 + joints_num * 3] / 1.0
+        #     # foot contact (B, seq_len, 4)
+        #     std[4 + (joints_num - 1) * 9 + joints_num * 3:] = std[
+        #                                                       4 + (joints_num - 1) * 9 + joints_num * 3:] / opt.feat_bias
 
-            assert 4 + (joints_num - 1) * 9 + joints_num * 3 + 4 == mean.shape[-1]
-            np.save(pjoin(opt.meta_dir, 'mean.npy'), mean)
-            np.save(pjoin(opt.meta_dir, 'std.npy'), std)
+        #     assert 4 + (joints_num - 1) * 9 + joints_num * 3 + 4 == mean.shape[-1]
+        #     np.save(pjoin(opt.meta_dir, 'mean.npy'), mean)
+        #     np.save(pjoin(opt.meta_dir, 'std.npy'), std)
+        # means = torch.zeros(3)
+        # stds = torch.zeros(3)
+        # points = 0
+        # for entry in data_dict.values():
+        #     m = entry['motion'].clone()
+        #     m = m.view(m.shape[0], 22, 3)
+        #     means += torch.sum(m, dim=(0, 1))
+        #     points += m.shape[0] * 22
+            
+        # means /= points
+        # np.save('pos_mean.npy', means)
 
+        # for entry in data_dict.values():
+        #     m = entry['motion'].clone()
+        #     m = m.view(m.shape[0], 22, 3)
+        #     mean = means.unsqueeze(0).unsqueeze(0).expand(m.shape[0], 22, -1)
+        #     m -= mean
+        #     m = m ** 2
+        #     stds += torch.sum(m, dim=(0, 1))
+        # stds /= points - 1
+        # stds = stds.sqrt()
+        
+        # np.save('pos_stds.npy', stds)
+        # exit(0)
         self.mean = mean
         self.std = std
         self.length_arr = np.array(length_list)
@@ -138,8 +171,13 @@ class Text2MotionDataset(data.Dataset):
 
         assert len(motion) == max_motion_length
         "Z Normalization"
-        motion = (motion - self.mean) / self.std
-
+        #motion = (motion - self.mean) / self.std
+        
+        if not isinstance(motion, torch.Tensor):
+            motion = torch.tensor(motion)
+            print("NOT A TENSOR")
+            exit(0)
+            
         if self.eval_mode:
             tokens = text_data['tokens']
             if len(tokens) < self.opt.max_text_len:
@@ -161,4 +199,5 @@ class Text2MotionDataset(data.Dataset):
             pos_one_hots = np.concatenate(pos_one_hots, axis=0)
             word_embeddings = np.concatenate(word_embeddings, axis=0)
             return word_embeddings, pos_one_hots, caption, sent_len, motion, m_length
+        #print(type(caption), type(motion), type(m_length))
         return caption, motion, m_length

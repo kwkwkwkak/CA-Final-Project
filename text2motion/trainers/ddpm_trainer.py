@@ -11,7 +11,7 @@ from utils.utils import print_current_loss
 from os.path import join as pjoin
 import codecs as cs
 import torch.distributed as dist
-
+from tqdm import tqdm
 
 from mmcv.runner import get_dist_info
 from models.gaussian_diffusion import (
@@ -195,7 +195,7 @@ class DDPMTrainer(object):
             num_gpus=len(self.opt.gpu_id))
 
         logs = OrderedDict()
-        for epoch in range(cur_epoch, self.opt.num_epochs):
+        for epoch in tqdm(range(cur_epoch, self.opt.num_epochs)):
             self.train_mode()
             for i, batch_data in enumerate(train_loader):
                 self.forward(batch_data)

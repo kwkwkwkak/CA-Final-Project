@@ -10,7 +10,7 @@ import numpy as np
 import clip
 
 import math
-
+from models.rotation2xyz import Rotation2xyz
 
 def timestep_embedding(timesteps, dim, max_period=10000):
     """
@@ -376,6 +376,8 @@ class MotionTransformer(nn.Module):
         
         # Output Module
         self.out = zero_module(nn.Linear(self.latent_dim, self.input_feats))
+        self.rot2xyz = Rotation2xyz(device='cpu', dataset='amass')
+        
         
     def encode_text(self, text, device):
         with torch.no_grad():

@@ -13,7 +13,9 @@ from mmcv.runner import get_dist_info, init_dist
 from mmcv.parallel import MMDistributedDataParallel, MMDataParallel
 import torch
 import torch.distributed as dist
-
+from data_loaders.humanml.scripts.motion_process import recover_from_ric
+from tqdm import tqdm
+import numpy as np
 
 def build_models(opt, dim_pose):
     encoder = MotionTransformer(
@@ -52,7 +54,8 @@ if __name__ == '__main__':
         radius = 4
         fps = 20
         opt.max_motion_length = 196
-        dim_pose = 263
+        #dim_pose = 263
+        dim_pose = 22 * 3 # 22 joints, euler angle
         kinematic_chain = paramUtil.t2m_kinematic_chain
     elif opt.dataset_name == 'kit':
         opt.data_root = './data/KIT-ML'
@@ -89,4 +92,16 @@ if __name__ == '__main__':
 
     trainer = DDPMTrainer(opt, encoder)
     train_dataset = Text2MotionDataset(opt, mean, std, train_split_file, opt.times)
+    
+    # print(train_dataset.data_dict['M014410']['motion'].shape) #[frames, njoints]
+    
+    # for entry in tqdm(train_dataset.data_dict.values(), desc="Converting joint rotation to position"):
+    #     m = torch.tensor(entry['motion'][np.newaxis, np.newaxis, :, :]) #[batch, nfeats, frames, njoints]
+    #     m = recover_from_ric(m, 22)
+    #     #entry['motion'] = m.view(*m.shape[2:]) #[frames, njoints, nfeats]
+        
+    #     entry['motion'] = m.view(m.shape[2], -1)
+        # with open('testing_pos.npy', 'wb') as f:
+        #     np.save(f, entry['motion'].view(entry['motion'].shape[0], 22, 3))
+        # exit(0)
     trainer.train(train_dataset)

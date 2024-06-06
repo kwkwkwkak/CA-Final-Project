@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-from mmcv.runner import init_dist, get_dist_info
+from mmengine.dist import init_dist, get_dist_info
 import torch.distributed as dist
 
 
@@ -14,7 +14,7 @@ class BaseOptions():
         self.parser.add_argument('--name', type=str, default="test", help='Name of this trial')
         self.parser.add_argument('--decomp_name', type=str, default="Decomp_SP001_SM001_H512", help='Name of autoencoder model')
 
-        self.parser.add_argument("--gpu_id", type=int, nargs='+', default=(-1), help='GPU id')
+        self.parser.add_argument("--gpu_id", type=int, nargs='+', default=[0], help='GPU id')
         self.parser.add_argument("--distributed", action="store_true", help='Whether to use DDP training')
         self.parser.add_argument("--data_parallel", action="store_true", help="Whether to use DP training")
 

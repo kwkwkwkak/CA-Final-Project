@@ -11,6 +11,7 @@ import torch as th
 
 from abc import ABC, abstractmethod
 import torch.distributed as dist
+from data_loaders.humanml.scripts.motion_process import recover_from_ric
 
 
 def create_named_schedule_sampler(name, diffusion):
@@ -378,6 +379,11 @@ class GaussianDiffusion:
             * np.sqrt(alphas)
             / (1.0 - self.alphas_cumprod)
         )
+        
+        self.bone_pairs = th.tensor([
+        (0, 1), (0, 2), (1, 4), (2, 5), (4, 7), (5, 8), (7, 10), (8, 11), (9, 13), (9, 14), (13, 16), (14, 17), (16, 18), (17, 19), (18, 20), (19, 21), 
+        (15, 12), (12, 9), (9, 6), (6, 3), (3, 0)
+        ])
 
     def q_mean_variance(self, x_start, t):
         """
@@ -396,6 +402,7 @@ class GaussianDiffusion:
         )
         return mean, variance, log_variance
 
+    
     def q_sample(self, x_start, t, noise=None):
         """
         Diffuse the data for a given number of diffusion steps.
@@ -988,6 +995,7 @@ class GaussianDiffusion:
         :return: a dict with the key "loss" containing a tensor of shape [N].
                  Some mean or variance settings may also have other keys.
         """
+        
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
@@ -995,7 +1003,7 @@ class GaussianDiffusion:
         x_t = self.q_sample(x_start, t, noise=noise)
 
         terms = {}
-
+        
         if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
             terms["loss"] = self._vb_terms_bpd(
                 model=model,
@@ -1040,17 +1048,51 @@ class GaussianDiffusion:
                 ModelMeanType.EPSILON: noise,
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
-            terms["mse"] = mean_flat((target - model_output) ** 2).view(-1, 1).mean(-1)
+
+            mse = mean_flat((target - model_output) ** 2).view(-1, 1).mean(-1)
+            predicted_xstart = self._predict_xstart_from_eps(x_t, t, model_output) #[batch, frame, njoints]
+
+            assert predicted_xstart.shape[2] == x_start.shape[2] == 66
+            
+            predicted_skeletons = predicted_xstart.view(predicted_xstart.shape[0], predicted_xstart.shape[1], 22, 3)
+            original_skeletons = x_start.view(x_start.shape[0], x_start.shape[1], 22, 3)
+            # np.save('original_skeleton.npy', original_skeletons.cpu().detach().numpy())
+            # np.save('predictedl_skeleton.npy', predicted_skeletons.cpu().detach().numpy())
+            # exit()
+            # TODO: implement losses
+            
+            #Groud truth supervision
+            l2 = th.sqrt((predicted_skeletons - original_skeletons) ** 2)
+            gt_loss = l2.sum(dim=list(range(1, len(l2.shape))))
+             
+            predicted_bone_lens = self.calc_bone_len(predicted_skeletons)
+            # bone variance
+            var_loss = th.sum(th.var(predicted_bone_lens, dim=1), dim=1)
+            
+            #bone symmetric
+            symmetric_loss = th.sum(th.abs(predicted_bone_lens[:, :, :16:2] - predicted_bone_lens[:, :, 1:16:2]), dim=(1, 2))
+            # print(gt_loss.shape, var_loss.shape, symmetric_loss.shape)
             # if "vb" in terms:
             #     terms["loss"] = terms["mse"] + terms["vb"]
             # else:
             #     terms["loss"] = terms["mse"]
+            skeletal_losses = gt_loss + var_loss + symmetric_loss
+            alpha_bar = _extract_into_tensor(self.alphas_cumprod, t, t.shape)
+            print("losses:", mse[0], gt_loss[0], var_loss[0], symmetric_loss[0])
+            terms["mse"] = mse + alpha_bar * skeletal_losses
             terms["target"] = target
             terms["pred"] = model_output
         else:
             raise NotImplementedError(self.loss_type)
 
         return terms
+        
+    def calc_bone_len(self, x):
+        # 15 12 / 12 9 / 9 6 / 6 3 / 3 0 / 0 1 / 0 2 / 1 4 / 2 5 / 4 7 / 5 8 / 7 10 / 8 11 / 9 13 / 9 14 / 13 16 / 14 17 / 16 18 / 17 19 / 18 20 / 19 21
+        joint1 = x[:, :, self.bone_pairs[:, 0], :]
+        joint2 = x[:, :, self.bone_pairs[:, 1], :]
+        bone_lengths = th.norm(joint1 - joint2, dim=3)
+        return bone_lengths
 
     def _prior_bpd(self, x_start):
         """
