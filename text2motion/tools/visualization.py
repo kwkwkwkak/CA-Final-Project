@@ -18,8 +18,8 @@ from utils.motion_process import recover_from_ric
 
 
 def plot_t2m(data, result_path, npy_path, caption):
-    joint = recover_from_ric(torch.from_numpy(data).float(), opt.joints_num).numpy()
-    joint = motion_temporal_filter(joint, sigma=1)
+    # joint = recover_from_ric(torch.from_numpy(data).float(), opt.joints_num).numpy()
+    joint = motion_temporal_filter(data, sigma=1)
     plot_3d_motion(result_path, paramUtil.t2m_kinematic_chain, joint, title=caption, fps=20)
     if npy_path != "":
         np.save(npy_path, joint)
@@ -41,12 +41,14 @@ if __name__ == '__main__':
     parser.add_argument('--opt_path', type=str, help='Opt path')
     parser.add_argument('--text', type=str, default="", help='Text description for motion generation')
     parser.add_argument('--motion_length', type=int, default=60, help='Number of frames for motion generation')
-    parser.add_argument('--result_path', type=str, default="test_sample.gif", help='Path to save generation result')
+    parser.add_argument('--result_path', type=str, default="test_sample.mp4", help='Path to save generation result')
     parser.add_argument('--npy_path', type=str, default="", help='Path to save 3D keypoints sequence')
     parser.add_argument('--gpu_id', type=int, default=-1, help="which gpu to use")
     args = parser.parse_args()
     
     device = torch.device('cuda:%d' % args.gpu_id if args.gpu_id != -1 else 'cpu')
+    print("Predicting with opt", args.opt_path)
+    
     opt = get_opt(args.opt_path, device)
     opt.do_denoise = True
 
@@ -56,13 +58,16 @@ if __name__ == '__main__':
     opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
     opt.text_dir = pjoin(opt.data_root, 'texts')
     opt.joints_num = 22
-    opt.dim_pose = 263
+    #opt.dim_pose = 263
+    opt.dim_pose = 22 * 3
     dim_word = 300
     dim_pos_ohot = len(POS_enumerator)
     num_classes = 200 // opt.unit_length
 
-    mean = np.load(pjoin(opt.meta_dir, 'mean.npy'))
-    std = np.load(pjoin(opt.meta_dir, 'std.npy'))
+    # mean = np.load(pjoin(opt.meta_dir, 'pos_mean.npy'))
+    # std = np.load(pjoin(opt.meta_dir, 'pos_stds.npy'))
+    mean = np.load('pos_mean.npy')
+    std = np.load('pos_stds.npy')
 
     encoder = build_models(opt).to(device)
     trainer = DDPMTrainer(opt, encoder)

@@ -1,5 +1,5 @@
 ------------ Options -------------
-batch_size: 128
+batch_size: 64
 checkpoints_dir: ./checkpoints
 data_parallel: False
 dataset_name: t2m
@@ -36,6 +36,6 @@ num_layers: 8
 save_every_e: 5
 save_latest: 500
 text_enc_mod: bigru
-times: 25
+times: 1
 unit_length: 4
 -------------- End ----------------

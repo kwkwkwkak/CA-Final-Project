@@ -74,20 +74,25 @@ class DDPMTrainer(object):
         B, T = x_start.shape[:2]
         cur_len = torch.LongTensor([min(T, m_len) for m_len in  m_lens]).to(self.device)
         t, _ = self.sampler.sample(B, x_start.device)
-        output = self.diffusion.training_losses(
-            model=self.encoder,
-            x_start=x_start,
-            t=t,
-            model_kwargs={"text": caption, "length": cur_len}
-        )
-
-        self.real_noise = output['target']
-        self.fake_noise = output['pred']
         try:
             self.src_mask = self.encoder.module.generate_src_mask(T, cur_len).to(x_start.device)
         except:
             self.src_mask = self.encoder.generate_src_mask(T, cur_len).to(x_start.device)
-
+            
+        output = self.diffusion.training_losses(
+            model=self.encoder,
+            x_start=x_start,
+            t=t,
+            mask=self.src_mask,
+            model_kwargs={"text": caption, "length": cur_len}
+        )
+        # self.real_noise = output['target']
+        # self.fake_noise = output['pred']
+        self.total_losses = output['losses'].mean(-1)
+        # self.gt_loss = output["GT_supervision"].mean(dim=-1)
+        # self.bone_var = output["bone_variance"].mean(dim=-1)
+        # self.symm = output["symmetricity"].mean(dim=-1)
+        
     def generate_batch(self, caption, m_lens, dim_pose):
         xf_proj, xf_out = self.encoder.encode_text(caption, self.device)
         
@@ -126,17 +131,21 @@ class DDPMTrainer(object):
         return all_output
 
     def backward_G(self):
-        loss_mot_rec = self.mse_criterion(self.fake_noise, self.real_noise).mean(dim=-1)
-        loss_mot_rec = (loss_mot_rec * self.src_mask).sum() / self.src_mask.sum()
-        self.loss_mot_rec = loss_mot_rec
+        # loss_mot_rec = self.mse_criterion(self.fake_noise, self.real_noise).mean(dim=-1)
+        # loss_mot_rec = (loss_mot_rec * self.src_mask).sum() / self.src_mask.sum()
+        # self.loss_mot_rec = loss_mot_rec
         loss_logs = OrderedDict({})
-        loss_logs['loss_mot_rec'] = self.loss_mot_rec.item()
+        loss_logs['total_loss'] = self.total_losses.item()
+        # loss_logs["GT_supervision"] = self.gt_loss.item()
+        # loss_logs["bone_variance"] = self.bone_var.item()
+        # loss_logs["symmetricity"] = self.symm.item()
+        
         return loss_logs
 
     def update(self):
         self.zero_grad([self.opt_encoder])
         loss_logs = self.backward_G()
-        self.loss_mot_rec.backward()
+        self.total_losses.backward()
         self.clip_norm([self.encoder])
         self.step([self.opt_encoder])
 
@@ -175,6 +184,7 @@ class DDPMTrainer(object):
 
     def train(self, train_dataset):
         rank, world_size = get_dist_info()
+        #print(rank, world_size)
         self.to(self.device)
         self.opt_encoder = optim.Adam(self.encoder.parameters(), lr=self.opt.lr)
         it = 0
@@ -195,8 +205,9 @@ class DDPMTrainer(object):
             num_gpus=len(self.opt.gpu_id))
 
         logs = OrderedDict()
-        for epoch in tqdm(range(cur_epoch, self.opt.num_epochs)):
+        for epoch in tqdm(range(cur_epoch, self.opt.num_epochs), desc="epochs"):
             self.train_mode()
+            print("number of batches =", len(train_loader))
             for i, batch_data in enumerate(train_loader):
                 self.forward(batch_data)
                 log_dict = self.update()
@@ -206,10 +217,10 @@ class DDPMTrainer(object):
                     else:
                         logs[k] += v
                 it += 1
-                if it % self.opt.log_every == 0 and rank == 0:
+                if it % 1 == 0:# and rank == 0:
                     mean_loss = OrderedDict({})
                     for tag, value in logs.items():
-                        mean_loss[tag] = value / self.opt.log_every
+                        mean_loss[tag] = value / 1
                     logs = OrderedDict()
                     print_current_loss(start_time, it, mean_loss, epoch, inner_iter=i)
 

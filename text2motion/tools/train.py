@@ -72,9 +72,10 @@ if __name__ == '__main__':
         raise KeyError('Dataset Does Not Exist')
 
     dim_word = 300
-    mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
-    std = np.load(pjoin(opt.data_root, 'Std.npy'))
-
+    # mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
+    # std = np.load(pjoin(opt.data_root, 'Std.npy'))
+    mean = np.load('pos_mean.npy')
+    std = np.load('pos_stds.npy')
     train_split_file = pjoin(opt.data_root, 'train.txt')
 
     encoder = build_models(opt, dim_pose)

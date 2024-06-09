@@ -160,6 +160,11 @@ def mean_flat(tensor):
     """
     return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
+def sum_flat_test(tensor):
+    """
+    Take the mean over all non-batch dimensions.
+    """
+    return tensor.sum(dim=list(range(1, len(tensor.shape))))
 
 def normal_kl(mean1, logvar1, mean2, logvar2):
     """
@@ -982,7 +987,7 @@ class GaussianDiffusion:
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
-    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
+    def training_losses(self, model, x_start, t, mask, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
 
@@ -1049,44 +1054,59 @@ class GaussianDiffusion:
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
 
-            mse = mean_flat((target - model_output) ** 2).view(-1, 1).mean(-1)
+            l2_dist = self.masked_mean_symm((target - model_output) ** 2, mask).view(-1, 1).mean(-1)
             predicted_xstart = self._predict_xstart_from_eps(x_t, t, model_output) #[batch, frame, njoints]
-
-            assert predicted_xstart.shape[2] == x_start.shape[2] == 66
+            #terms["l2_distance"] = l2_dist
             
             predicted_skeletons = predicted_xstart.view(predicted_xstart.shape[0], predicted_xstart.shape[1], 22, 3)
             original_skeletons = x_start.view(x_start.shape[0], x_start.shape[1], 22, 3)
-            # np.save('original_skeleton.npy', original_skeletons.cpu().detach().numpy())
-            # np.save('predictedl_skeleton.npy', predicted_skeletons.cpu().detach().numpy())
-            # exit()
-            # TODO: implement losses
+            predicted_bone_lens = self.calc_bone_len(predicted_skeletons)
             
             #Groud truth supervision
-            l2 = th.sqrt((predicted_skeletons - original_skeletons) ** 2)
-            gt_loss = l2.sum(dim=list(range(1, len(l2.shape))))
-             
-            predicted_bone_lens = self.calc_bone_len(predicted_skeletons)
+            gt_loss = self.masked_mean_gt((predicted_skeletons - original_skeletons) ** 2, mask)
+            # gt_loss = l2.sum(dim=list(range(1, len(l2.shape))))
+            # terms["GT_supervision"] = gt_loss
+            
             # bone variance
-            var_loss = th.sum(th.var(predicted_bone_lens, dim=1), dim=1)
+            var_loss = self.masked_var_bone(predicted_bone_lens, mask).mean(-1)
+            # terms["bone_variance"] = var_loss
             
             #bone symmetric
-            symmetric_loss = th.sum(th.abs(predicted_bone_lens[:, :, :16:2] - predicted_bone_lens[:, :, 1:16:2]), dim=(1, 2))
+            symmetric_loss = self.masked_mean_symm(th.abs(predicted_bone_lens[:, :, :16:2] - predicted_bone_lens[:, :, 1:16:2]), mask)
+            # terms["symmetricity"] = symmetric_loss
+            
+            alpha_bar = _extract_into_tensor(self.alphas_cumprod, t, t.shape)
+            # print(l2_dist.shape, gt_loss.shape,var_loss.shape, symmetric_loss.shape, alpha_bar.shape)
+            # assert l2_dist.shape == gt_loss.shape == var_loss.shape == symmetric_loss.shape == alpha_bar.shape
+            
+            skeletal_losses = alpha_bar * (gt_loss + var_loss + symmetric_loss)
+            terms["losses"] = l2_dist + skeletal_losses
             # print(gt_loss.shape, var_loss.shape, symmetric_loss.shape)
             # if "vb" in terms:
             #     terms["loss"] = terms["mse"] + terms["vb"]
             # else:
             #     terms["loss"] = terms["mse"]
-            skeletal_losses = gt_loss + var_loss + symmetric_loss
-            alpha_bar = _extract_into_tensor(self.alphas_cumprod, t, t.shape)
-            print("losses:", mse[0], gt_loss[0], var_loss[0], symmetric_loss[0])
-            terms["mse"] = mse + alpha_bar * skeletal_losses
-            terms["target"] = target
-            terms["pred"] = model_output
+
+            print("losses:", l2_dist.mean(-1), gt_loss.mean(-1), var_loss.mean(-1), symmetric_loss.mean(-1))
+            
+            # terms["target"] = target
+            # terms["pred"] = model_output
         else:
             raise NotImplementedError(self.loss_type)
 
         return terms
-        
+    
+    def masked_mean_gt(self, l2, mask):
+        return th.sum(th.mean(l2 * mask.unsqueeze(-1).unsqueeze(-1), dim=(-2, -1)), dim=-1) / mask.sum()
+
+    def masked_var_bone(self, data, mask):
+        masked = data * mask.unsqueeze(-1)
+        mean = th.sum(masked, dim=1) / th.sum(mask, dim=1).unsqueeze(-1)
+        return th.sum((masked - mean.unsqueeze(1) * mask.unsqueeze(-1)) ** 2, dim=1) / (th.sum(mask, dim=1).unsqueeze(-1) - 1)
+
+    def masked_mean_symm(self, data, mask): 
+        return th.sum(data * mask.unsqueeze(-1), dim=(-1, -2)) / (th.sum(mask, dim=1) * data.shape[-1])
+    
     def calc_bone_len(self, x):
         # 15 12 / 12 9 / 9 6 / 6 3 / 3 0 / 0 1 / 0 2 / 1 4 / 2 5 / 4 7 / 5 8 / 7 10 / 8 11 / 9 13 / 9 14 / 13 16 / 14 17 / 16 18 / 17 19 / 18 20 / 19 21
         joint1 = x[:, :, self.bone_pairs[:, 0], :]

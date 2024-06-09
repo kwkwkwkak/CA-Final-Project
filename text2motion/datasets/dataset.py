@@ -112,25 +112,23 @@ class Text2MotionDataset(data.Dataset):
         #     assert 4 + (joints_num - 1) * 9 + joints_num * 3 + 4 == mean.shape[-1]
         #     np.save(pjoin(opt.meta_dir, 'mean.npy'), mean)
         #     np.save(pjoin(opt.meta_dir, 'std.npy'), std)
-        # means = torch.zeros(3)
-        # stds = torch.zeros(3)
+        # means = torch.zeros(66)
+        # stds = torch.zeros(66)
         # points = 0
         # for entry in data_dict.values():
         #     m = entry['motion'].clone()
-        #     m = m.view(m.shape[0], 22, 3)
-        #     means += torch.sum(m, dim=(0, 1))
-        #     points += m.shape[0] * 22
+        #     means += torch.sum(m, dim=0)
+        #     points += m.shape[0]
             
         # means /= points
         # np.save('pos_mean.npy', means)
 
         # for entry in data_dict.values():
         #     m = entry['motion'].clone()
-        #     m = m.view(m.shape[0], 22, 3)
-        #     mean = means.unsqueeze(0).unsqueeze(0).expand(m.shape[0], 22, -1)
-        #     m -= mean
+        #     mn = means.unsqueeze(0)
+        #     m -= mn
         #     m = m ** 2
-        #     stds += torch.sum(m, dim=(0, 1))
+        #     stds += torch.sum(m, dim=0)
         # stds /= points - 1
         # stds = stds.sqrt()
         
@@ -171,12 +169,13 @@ class Text2MotionDataset(data.Dataset):
 
         assert len(motion) == max_motion_length
         "Z Normalization"
-        #motion = (motion - self.mean) / self.std
+        motion = (motion - self.mean) / self.std
         
         if not isinstance(motion, torch.Tensor):
+            # print(motion.shape)
+            #print(type(motion))
             motion = torch.tensor(motion)
-            print("NOT A TENSOR")
-            exit(0)
+            # exit(0)
             
         if self.eval_mode:
             tokens = text_data['tokens']

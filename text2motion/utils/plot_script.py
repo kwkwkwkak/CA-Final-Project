@@ -107,9 +107,10 @@ def plot_3d_motion(save_path, kinematic_tree, joints, title, figsize=(10, 10), f
         ax.set_xticklabels([])
         ax.set_yticklabels([])
         ax.set_zticklabels([])
-
+    # print("ffmpeg path:", plt.rcParams['animation.ffmpeg_path'])
     ani = FuncAnimation(fig, update, frames=frame_number, interval=1000 / fps, repeat=False)
 
     # writer = FFMpegFileWriter(fps=fps)
+    print("Saving video to", save_path)
     ani.save(save_path, fps=fps)
     plt.close()

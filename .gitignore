@@ -1,1 +1,4 @@
-text2motion/data/
+text2motion/data/HumanML3D
+text2motion/checkpoints/
+text2motion/body_models/smpl/
+test_sample.mp4
