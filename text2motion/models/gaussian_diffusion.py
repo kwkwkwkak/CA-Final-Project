@@ -1097,7 +1097,7 @@ class GaussianDiffusion:
         return terms
     
     def masked_mean_gt(self, l2, mask):
-        return th.sum(th.mean(l2 * mask.unsqueeze(-1).unsqueeze(-1), dim=(-2, -1)), dim=-1) / mask.sum()
+        return th.sum(th.mean(l2 * mask.unsqueeze(-1).unsqueeze(-1), dim=(-2, -1)), dim=-1) / mask.sum(-1)
 
     def masked_var_bone(self, data, mask):
         masked = data * mask.unsqueeze(-1)
